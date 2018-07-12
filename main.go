@@ -1,14 +1,14 @@
 package main
 
 import (
-	"time"
-	"os"
-	log "github.com/sirupsen/logrus"
-	"github.com/gocarina/gocsv"
-	"github.com/cloudfoundry-community/go-cfclient"
 	"fmt"
+	"github.com/cloudfoundry-community/go-cfclient"
 	"github.com/cloudfoundry-community/go-uaa"
+	"github.com/gocarina/gocsv"
+	log "github.com/sirupsen/logrus"
+	"os"
 	"strings"
+	"time"
 )
 
 var (
@@ -20,6 +20,7 @@ var (
 	capiPassword     = os.Getenv("CAPI_PASSWORD")
 	userKeepAlive    = os.Getenv("USER_KEEPALIVE")
 	baselinePassword = os.Getenv("DEFAULT_PASSWORD")
+	fileName         = os.Getenv("CSV_FILE")
 )
 
 // User defines the CSV file format.
@@ -27,11 +28,12 @@ type User struct {
 	GivenName  string `csv:"FirstName"`
 	FamilyName string `csv:"LastName"`
 	Email      string `csv:"Email"`
-	// This needs to be in RFC 822 format. Reference: 2006-01-02T15:04:05Z07:00
+	// This needs to be in RFC 3339 format. Reference: 2006-01-02T15:04:05Z
 	DateStart string `csv:"DateStart"`
 }
 
 func main() {
+	fmt.Println("hello from boulder.")
 	fmt.Println("bootstrapping.")
 	c := &cfclient.Config{
 		ApiAddress: capiTarget,
@@ -52,7 +54,7 @@ func main() {
 	// uaaClient.Verbose = true
 	fmt.Println("connected to cf-uaa.")
 
-	users := marshallUsers("temp-users.csv")
+	users := marshallUsers(fileName)
 	fmt.Println("loaded reference file.")
 
 	validateLifecycle(cfClient, uaaClient, users)
@@ -83,11 +85,11 @@ func validateLifecycle(c *cfclient.Client, a *uaa.API, u []*User) {
 	for {
 		select {
 		case _ = <-ticker.C:
-			fmt.Println("ticking.")
+			fmt.Println("refreshing.")
 			for _, user := range u {
 				// this means that the users exist in the spreadsheet but are essentially unmanaged at this point.
 				if user.DateStart == "" {
-					fmt.Printf("skipping user %s since they don't have an assigned date.\n", user.Email)
+					fmt.Printf("skipping user %s since they don't have an assigned start date.\n", user.Email)
 					continue
 				}
 				now := time.Now().UTC()
@@ -109,7 +111,7 @@ func validateLifecycle(c *cfclient.Client, a *uaa.API, u []*User) {
 					// if the user has expired, delete them.
 					if expiryTime.Before(now) {
 						fmt.Printf("deleting user %s since their access has expired.\n", user.Email)
-						deleteUser(a, c, user)
+						go deleteUser(a, c, user)
 						continue
 					}
 
@@ -119,7 +121,7 @@ func validateLifecycle(c *cfclient.Client, a *uaa.API, u []*User) {
 						log.Error(err)
 					}
 					if !orgExists {
-						buildOrg(a, c, user)
+						go buildOrg(a, c, user)
 					}
 				}
 
@@ -127,24 +129,24 @@ func validateLifecycle(c *cfclient.Client, a *uaa.API, u []*User) {
 				if !exists {
 					// and they have already expired.
 					if expiryTime.Before(now) {
-						// skip
+						// do nothing.
 						continue
 					}
-					fmt.Printf("user %s is due to be created by %s\n", user.Email, startTime.String())
 					// create them.
 					if startTime.Before(now) {
 						fmt.Printf("creating user %s and their associated org and space.\n", user.Email)
-						buildUser(a, c, user)
+						go buildUser(a, c, user)
 					}
 				}
-			}}
+			}
+		}
 	}
 }
 
 func buildUser(a *uaa.API, c *cfclient.Client, u *User) {
 	// create the user in UAA.
 	userRef := uaa.User{
-		Username: usernameShortener(u),
+		Username: u.Email,
 		Password: baselinePassword,
 		Emails: []uaa.Email{{
 			Value:   u.Email,
@@ -155,12 +157,11 @@ func buildUser(a *uaa.API, c *cfclient.Client, u *User) {
 			GivenName:  u.GivenName,
 		},
 	}
-	//fmt.Printf("creating user as such: %#v\n", userRef)
 	user, err := a.CreateUser(userRef)
 	if err != nil {
-		log.Errorf("error creating %s user. %s", usernameShortener(u), err)
+		log.Errorf("error creating %s user. %s", u.Email, err)
 	}
-	fmt.Printf("created %s user.\n", usernameShortener(u))
+	fmt.Printf("created %s user.\n", u.Email)
 
 	org, err := c.CreateOrg(cfclient.OrgRequest{
 		Name: fmt.Sprintf("%s-org", usernameShortener(u)),
@@ -180,7 +181,7 @@ func buildUser(a *uaa.API, c *cfclient.Client, u *User) {
 	if err != nil {
 		log.Errorf("error associating %s with %s-org as org user. %s", usernameShortener(u), usernameShortener(u), err)
 	}
-	fmt.Printf("associated %s with %s-org as OrgUser.", usernameShortener(u), usernameShortener(u))
+	fmt.Printf("associated %s with %s-org as OrgUser.\n", usernameShortener(u), usernameShortener(u))
 
 	_, err = c.CreateSpace(cfclient.SpaceRequest{
 		Name:             fmt.Sprintf("%s-dev", usernameShortener(u)),
@@ -201,7 +202,7 @@ func usernameShortener(u *User) string {
 
 func buildOrg(a *uaa.API, c *cfclient.Client, u *User) {
 	// get our user
-	user, err := a.GetUserByUsername(usernameShortener(u), "", "")
+	user, err := a.GetUserByUsername(u.Email, "", "")
 	if err != nil {
 		log.Errorf("error getting %s user. %s", u.Email, err)
 	}
@@ -250,15 +251,15 @@ func deleteUser(a *uaa.API, c *cfclient.Client, u *User) {
 	if err != nil {
 		log.Errorf("can't delete %s-org. %s", err)
 	}
-	testUser, err := a.GetUserByUsername(usernameShortener(u), "", "")
+	testUser, err := a.GetUserByUsername(u.Email, "", "")
 	if err != nil {
-		log.Errorf("error getting %s to delete. %s\n", usernameShortener(u), err)
+		log.Errorf("error getting %s to delete. %s\n", u.Email, err)
 	}
 	_, err = a.DeleteUser(testUser.ID)
 	if err != nil {
-		log.Errorf("error deleting %s user. %s", usernameShortener(u), err)
+		log.Errorf("error deleting %s user. %s", u.Email, err)
 	}
-	fmt.Printf("successfully deleted %s from cf and cf-uaa.\n", usernameShortener(u))
+	fmt.Printf("successfully deleted %s from cf and cf-uaa.\n", u.Email)
 }
 
 func userExists(c *cfclient.Client, u *User) (bool, error) {
@@ -266,12 +267,10 @@ func userExists(c *cfclient.Client, u *User) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	userRef := users.GetUserByUsername(usernameShortener(u))
+	userRef := users.GetUserByUsername(u.Email)
 	if userRef.Guid == "" {
-		fmt.Printf("user %s does not exist.\n", usernameShortener(u))
 		return false, nil
 	} else {
-		fmt.Printf("user %s exists.\n", usernameShortener(u))
 		return true, nil
 	}
 }

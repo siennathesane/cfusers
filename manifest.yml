@@ -14,3 +14,4 @@ applications:
       CAPI_PASSWORD:
       USER_KEEPALIVE:
       DEFAULT_PASSWORD:
+      CSV_FILE:

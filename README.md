@@ -2,12 +2,14 @@
 
 Little worker tool that you can run in Cloud Foundry to manage temporary users. These could be contractors, visitors, temporary teammates, etc.
 
-It's super easy to use. You just have to prepopulate a CSV file with some basics, then push it along with a manifest, and that's it! No more crazy automation, just something nice and simple, easy to use.
+It's super easy to use.
 
 What this does:
 
-1. Checks to see if it's time to create a user.
-1. Creates a user when it's ready
+1. Checks to see if it's time to create a temporary user.
+1. Creates a temporary user when it's supposed to be created.
+1. Makes sure the temporary user's base org and space structure stay intact.
+1. When a temporary user's time limit has expired, it deletes the temporary user's CF constructs and their user from UAA.
 
 ### User Instructions
 
@@ -18,9 +20,9 @@ What this does:
 * `cf push -f prod-manifest.yml`
 * `cf set-health-check cfusers` so it's checked properly.
 
-:warning: The date format matters! :warning:
+:warning: The date format matters!
 
-The date format needs to match this: `2006-01-02T15:04:05Z`. That is January 2nd, 2006 at 3:04pm UTC (Zulu), for reference. This is the date you want your users to be created on.
+The date format needs to match this: `2006-01-02T15:04:05Z`. That is January 2nd, 2006 at 3:04pm UTC (Zulu), for reference. The date you put in the file determines when the temporary user will be created in UTC time. Why UTC? Time zones are hard for computers but easy for humans - it's a best practice to always work in UTC when working programmatically. If all systems and tools are on UTC, then its much easier to align timestamps and events.
 
 Below is a quick manifest reference.
 
@@ -50,7 +52,7 @@ applications:
       CSV_FILE:
 ```
 
-If you want to clean things up faster and not wait for users to expire naturally, just change the `USER_KEEPALIVE` variable to `1m` or something like that. The next time it refreshes it's state, it will likely delete all users. Don't remove users from the spreadsheet until they've expired! If you do, this tool won't be able to track them, so resources will be left alone. If you do remove a user by accident, just go through and readd them (anywhere is fine, the order does not matter). This tool will refresh it's user references every 30 seconds, so things happen pretty quickly. If for some reason the app crashes, it'll be okay, it can pick up where it left off. :)
+If you want to clean things up faster and not wait for users to expire naturally, just change the `USER_KEEPALIVE` variable to `1m` or something short like that. The next time cfusers is restarted/restaged, it will read the new expiries and take appropriate action.. Don't remove users from the spreadsheet until they've expired, preferably. If you do, this tool won't be able to track those users, so temporary users and resources will be left in place. If you do remove a user by accident, just go through and readd them (anywhere in the spreadsheet is fine, the order does not matter). cfusers will refresh it's user references every 30 seconds, so things happen pretty quickly and regularly. If for some reason the app crashes, it'll be okay, it can pick up where it left off. :)
 
 ### Dev Instructions
 
@@ -60,6 +62,8 @@ If you want to reset the `temp-users.csv` file reference just run `git checkout 
 
 ### TODO
 
+In no specific order.
+
 1. Fix the logging. It's just a bunch of whacky print statements.
 1. Wrap this in a web server with a basic GUI. (I'm not good with UIs)
 1. Make it extensible. Reading from a CSV file is great but a database would be better.
@@ -68,4 +72,4 @@ If you want to reset the `temp-users.csv` file reference just run `git checkout 
 1. Would be cool if this supported k8s.
 1. Rewrite this a little more stably. It works as intended, but I crammed this together in like...3 hours with unfamiliar libraries and interfaces. It could be better.
 
-If you like this, I love hard ciders. ;)
+If you like this, I love hard ciders. :beers:

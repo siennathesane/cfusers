@@ -1,4 +1,4 @@
-.idea/
+.idea/*
 *.exe
 *.csv
 !test-users.csv

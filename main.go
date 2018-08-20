@@ -2,13 +2,12 @@ package main
 
 import (
 	"fmt"
-	"github.com/cloudfoundry-community/go-cfclient"
-	"github.com/cloudfoundry-community/go-uaa"
-	"github.com/gocarina/gocsv"
-	log "github.com/sirupsen/logrus"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/gocarina/gocsv"
+	log "github.com/sirupsen/logrus"
 )
 
 var (
@@ -74,7 +73,7 @@ func marshallUsers(fn string) []*User {
 }
 
 func validateLifecycle(c *cfclient.Client, a *uaa.API, u []*User) {
-	ticker := time.NewTicker(time.Second * 30)
+	ticker := time.NewTicker(time.Second * 60)
 	defer ticker.Stop()
 
 	keepAliveLength, err := time.ParseDuration(userKeepAlive)

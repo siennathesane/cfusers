@@ -16,6 +16,11 @@ type IdentityZone struct {
 	LastModified int                `json:"last_modified,omitempty"`
 }
 
+// Identifier returns the field used to uniquely identify an IdentityZone.
+func (iz IdentityZone) Identifier() string {
+	return iz.ID
+}
+
 // ClientSecretPolicy is an identity zone client secret policy.
 type ClientSecretPolicy struct {
 	MinLength                 int `json:"minLength,omitempty"`

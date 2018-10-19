@@ -3,13 +3,14 @@ package uaa
 import (
 	"crypto/tls"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"time"
+
+	"errors"
 
 	"golang.org/x/oauth2"
 )
@@ -51,15 +52,15 @@ func (a *API) doAndRead(req *http.Request, needsAuthentication bool) ([]byte, er
 	if a.Verbose {
 		logRequest(req)
 	}
-	if a.AuthenticatedClient == nil {
-		return nil, errors.New("doAndRead: the HTTPClient cannot be nil")
-	}
 	a.ensureTimeout()
 	var (
 		resp *http.Response
 		err  error
 	)
 	if needsAuthentication {
+		if a.AuthenticatedClient == nil {
+			return nil, errors.New("doAndRead: the HTTPClient cannot be nil")
+		}
 		a.ensureTransport(a.AuthenticatedClient)
 		resp, err = a.AuthenticatedClient.Do(req)
 	} else {
@@ -96,6 +97,10 @@ func (a *API) doAndRead(req *http.Request, needsAuthentication bool) ([]byte, er
 func (a *API) ensureTimeout() {
 	if a.AuthenticatedClient != nil && a.AuthenticatedClient.Timeout == 0 {
 		a.AuthenticatedClient.Timeout = time.Second * 120
+	}
+
+	if a.UnauthenticatedClient != nil && a.UnauthenticatedClient.Timeout == 0 {
+		a.UnauthenticatedClient.Timeout = time.Second * 120
 	}
 }
 

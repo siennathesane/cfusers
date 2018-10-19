@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	cfclient "github.com/cloudfoundry-community/go-cfclient"
+	uaa "github.com/cloudfoundry-community/go-uaa"
 	"github.com/gocarina/gocsv"
 	log "github.com/sirupsen/logrus"
 )
@@ -45,7 +47,7 @@ func main() {
 	}
 	fmt.Println("connected to cf.")
 
-	uaaClient, err := uaa.NewWithClientCredentials(uaaTarget, "", uaaUser, uaaPassword, uaa.OpaqueToken)
+	uaaClient, err := uaa.NewWithClientCredentials(uaaTarget, "", uaaUser, uaaPassword, uaa.OpaqueToken, false)
 	if err != nil {
 		log.Fatalf("error connecting to uaa. %s", err)
 	}

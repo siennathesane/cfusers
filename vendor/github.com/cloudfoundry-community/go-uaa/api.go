@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
-	"net"
 	"net/http"
 	"net/url"
 	"time"
@@ -53,7 +51,6 @@ type tokenTransport struct {
 
 func (t *tokenTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	req.Header.Set("Authorization", fmt.Sprintf("%s %s", t.token.Type(), t.token.AccessToken))
-	log.Println(req.Header.Get("Authorization"))
 	return t.underlyingTransport.RoundTrip(req)
 }
 
@@ -68,25 +65,19 @@ func NewWithToken(target string, zoneID string, token oauth2.Token) (*API, error
 		return nil, err
 	}
 
+	transport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return nil, errors.New("http.DefaultTransport was not a valid *http.Transport")
+	}
+
 	tokenClient := &http.Client{
 		Transport: &tokenTransport{
-			underlyingTransport: &http.Transport{
-				Proxy: http.ProxyFromEnvironment,
-				DialContext: (&net.Dialer{
-					Timeout:   30 * time.Second,
-					KeepAlive: 30 * time.Second,
-					DualStack: true,
-				}).DialContext,
-				MaxIdleConns:          100,
-				IdleConnTimeout:       90 * time.Second,
-				TLSHandshakeTimeout:   10 * time.Second,
-				ExpectContinueTimeout: 1 * time.Second,
-			},
-			token: token,
+			underlyingTransport: transport,
+			token:               token,
 		},
 	}
 
-	client := &http.Client{Transport: http.DefaultTransport}
+	client := &http.Client{Transport: transport}
 	return &API{
 		UnauthenticatedClient: client,
 		AuthenticatedClient:   tokenClient,
@@ -97,7 +88,7 @@ func NewWithToken(target string, zoneID string, token oauth2.Token) (*API, error
 
 // NewWithClientCredentials builds an API that uses the client credentials grant
 // to get a token for use with the UAA API.
-func NewWithClientCredentials(target string, zoneID string, clientID string, clientSecret string, tokenFormat TokenFormat) (*API, error) {
+func NewWithClientCredentials(target string, zoneID string, clientID string, clientSecret string, tokenFormat TokenFormat, skipSSLValidation bool) (*API, error) {
 	u, err := BuildTargetURL(target)
 	if err != nil {
 		return nil, err
@@ -113,17 +104,21 @@ func NewWithClientCredentials(target string, zoneID string, clientID string, cli
 		EndpointParams: v,
 	}
 	client := &http.Client{Transport: http.DefaultTransport}
-	return &API{
+	api := &API{
 		UnauthenticatedClient: client,
 		AuthenticatedClient:   c.Client(context.WithValue(context.Background(), oauth2.HTTPClient, client)),
 		TargetURL:             u,
 		ZoneID:                zoneID,
-	}, nil
+		SkipSSLValidation:     skipSSLValidation,
+	}
+	api.ensureTransport(api.AuthenticatedClient)
+	api.ensureTransport(api.UnauthenticatedClient)
+	return api, nil
 }
 
 // NewWithPasswordCredentials builds an API that uses the password credentials
 // grant to get a token for use with the UAA API.
-func NewWithPasswordCredentials(target string, zoneID string, clientID string, clientSecret string, username string, password string, tokenFormat TokenFormat) (*API, error) {
+func NewWithPasswordCredentials(target string, zoneID string, clientID string, clientSecret string, username string, password string, tokenFormat TokenFormat, skipSSLValidation bool) (*API, error) {
 	u, err := BuildTargetURL(target)
 	if err != nil {
 		return nil, err
@@ -143,31 +138,27 @@ func NewWithPasswordCredentials(target string, zoneID string, clientID string, c
 		EndpointParams: v,
 	}
 	client := &http.Client{Transport: http.DefaultTransport}
-	return &API{
+	api := &API{
 		UnauthenticatedClient: client,
 		AuthenticatedClient:   c.Client(context.WithValue(context.Background(), oauth2.HTTPClient, client)),
 		TargetURL:             u,
 		ZoneID:                zoneID,
-	}, nil
+		SkipSSLValidation:     skipSSLValidation,
+	}
+	api.ensureTransport(api.AuthenticatedClient)
+	api.ensureTransport(api.UnauthenticatedClient)
+	return api, nil
 }
 
 // NewWithAuthorizationCode builds an API that uses the authorization code
 // grant to get a token for use with the UAA API.
-//
-// You can supply an http.Client because this function has side-effects (a
-// token is requested from the target).
-//
-// If you do not supply an http.Client,
-//  http.Client{Transport: http.DefaultTransport}
-// will be used.
-func NewWithAuthorizationCode(target string, zoneID string, clientID string, clientSecret string, code string, skipSSLValidation bool, tokenFormat TokenFormat) (*API, error) {
+func NewWithAuthorizationCode(target string, zoneID string, clientID string, clientSecret string, code string, tokenFormat TokenFormat, skipSSLValidation bool) (*API, error) {
 	url, err := BuildTargetURL(target)
 	if err != nil {
 		return nil, err
 	}
 
 	tokenURL := urlWithPath(*url, "/oauth/token")
-	tokenURL.Query().Add("token_format", tokenFormat.String())
 	c := &oauth2.Config{
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
@@ -177,20 +168,66 @@ func NewWithAuthorizationCode(target string, zoneID string, clientID string, cli
 	}
 
 	client := &http.Client{Transport: http.DefaultTransport}
-	a := &API{
+	api := &API{
 		UnauthenticatedClient: client,
 		TargetURL:             url,
 		SkipSSLValidation:     skipSSLValidation,
 		ZoneID:                zoneID,
 	}
-	a.ensureTransport(a.UnauthenticatedClient)
-	ctx := context.WithValue(context.Background(), oauth2.HTTPClient, a.UnauthenticatedClient)
-	t, err := c.Exchange(ctx, code)
+
+	api.ensureTransport(api.UnauthenticatedClient)
+	ctx := context.WithValue(context.Background(), oauth2.HTTPClient, api.UnauthenticatedClient)
+	tokenFormatParam := oauth2.SetAuthURLParam("token_format", tokenFormat.String())
+	responseTypeParam := oauth2.SetAuthURLParam("response_type", "token")
+
+	t, err := c.Exchange(ctx, code, tokenFormatParam, responseTypeParam)
 	if err != nil {
 		return nil, err
 	}
 
-	a.AuthenticatedClient = c.Client(ctx, t)
+	api.AuthenticatedClient = c.Client(ctx, t)
+	api.ensureTransport(api.AuthenticatedClient)
+	return api, nil
+}
 
-	return a, nil
+// NewWithRefreshToken builds an API that uses the given refresh token to get an
+// access token for use with the UAA API.
+func NewWithRefreshToken(target string, zoneID string, clientID string, clientSecret string, refreshToken string, tokenFormat TokenFormat, skipSSLValidation bool) (*API, error) {
+	url, err := BuildTargetURL(target)
+	if err != nil {
+		return nil, err
+	}
+	tokenURL := urlWithPath(*url, "/oauth/token")
+	query := tokenURL.Query()
+	query.Set("token_format", tokenFormat.String())
+	tokenURL.RawQuery = query.Encode()
+
+	c := &oauth2.Config{
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		Endpoint: oauth2.Endpoint{
+			TokenURL: tokenURL.String(),
+		},
+	}
+
+	api := &API{
+		UnauthenticatedClient: &http.Client{Transport: http.DefaultTransport},
+		TargetURL:             url,
+		SkipSSLValidation:     skipSSLValidation,
+		ZoneID:                zoneID,
+	}
+	api.ensureTransport(api.UnauthenticatedClient)
+	ctx := context.WithValue(context.Background(), oauth2.HTTPClient, api.UnauthenticatedClient)
+	tokenSource := c.TokenSource(ctx, &oauth2.Token{
+		RefreshToken: refreshToken,
+	})
+
+	token, err := tokenSource.Token()
+	if err != nil {
+		return nil, err
+	}
+
+	api.AuthenticatedClient = c.Client(ctx, token)
+	api.ensureTransport(api.AuthenticatedClient)
+	return api, nil
 }

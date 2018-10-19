@@ -36,6 +36,11 @@ type Group struct {
 	Schemas     []string      `json:"schemas,omitempty"`
 }
 
+// Identifier returns the field used to uniquely identify a Group.
+func (g Group) Identifier() string {
+	return g.ID
+}
+
 // AddGroupMember adds the entity with the given memberID to the group with the
 // given ID. If no entityType is supplied, the entityType (which can be "USER"
 // or "GROUP") will be "USER". If no origin is supplied, the origin will be
@@ -54,6 +59,30 @@ func (a *API) AddGroupMember(groupID string, memberID string, entityType string,
 		return err
 	}
 	err = a.doJSON(http.MethodPost, &u, bytes.NewBuffer([]byte(j)), nil, true)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// RemoveGroupMember removes the entity with the given memberID from the group
+// with the given ID. If no entityType is supplied, the entityType (which can be
+// "USER" or "GROUP") will be "USER". If no origin is supplied, the origin will
+// be "uaa".
+func (a *API) RemoveGroupMember(groupID string, memberID string, entityType string, origin string) error {
+	u := urlWithPath(*a.TargetURL, fmt.Sprintf("%s/%s/members/%s", GroupsEndpoint, groupID, memberID))
+	if origin == "" {
+		origin = "uaa"
+	}
+	if entityType == "" {
+		entityType = "USER"
+	}
+	membership := GroupMember{Origin: origin, Type: entityType, Value: memberID}
+	j, err := json.Marshal(membership)
+	if err != nil {
+		return err
+	}
+	err = a.doJSON(http.MethodDelete, &u, bytes.NewBuffer([]byte(j)), nil, true)
 	if err != nil {
 		return err
 	}

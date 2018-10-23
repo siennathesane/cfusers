@@ -161,6 +161,7 @@ func buildUser(a *uaa.API, c *cfclient.Client, u *User) {
 	user, err := a.CreateUser(userRef)
 	if err != nil {
 		log.Errorf("error creating %s user. %s", u.Email, err)
+		return
 	}
 	fmt.Printf("created %s user.\n", u.Email)
 
@@ -169,18 +170,21 @@ func buildUser(a *uaa.API, c *cfclient.Client, u *User) {
 	})
 	if err != nil {
 		log.Errorf("error creating %s-org. %s", usernameShortener(u), err)
+		return
 	}
 	fmt.Printf("created %s-org.\n", usernameShortener(u))
 
 	_, err = c.AssociateOrgManager(org.Guid, user.ID)
 	if err != nil {
 		log.Errorf("error associating %s with %s-org. %s", usernameShortener(u), usernameShortener(u), err)
+		return
 	}
 	fmt.Printf("associated %s with %s-org as OrgManager.\n", usernameShortener(u), usernameShortener(u))
 
 	_, err = c.AssociateOrgUser(org.Guid, user.ID)
 	if err != nil {
 		log.Errorf("error associating %s with %s-org as org user. %s", usernameShortener(u), usernameShortener(u), err)
+		return
 	}
 	fmt.Printf("associated %s with %s-org as OrgUser.\n", usernameShortener(u), usernameShortener(u))
 
@@ -192,6 +196,7 @@ func buildUser(a *uaa.API, c *cfclient.Client, u *User) {
 	})
 	if err != nil {
 		log.Errorf("error creating %s-dev space. %s", usernameShortener(u), err)
+		return
 	}
 	fmt.Printf("associated %s with %s-dev as SpaceManager and SpaceDeveloper.\n", usernameShortener(u), usernameShortener(u))
 	return
@@ -206,6 +211,7 @@ func buildOrg(a *uaa.API, c *cfclient.Client, u *User) {
 	user, err := a.GetUserByUsername(u.Email, "", "")
 	if err != nil {
 		log.Errorf("error getting %s user. %s", u.Email, err)
+		return
 	}
 	fmt.Printf("got %s user.\n", u.Email)
 
@@ -214,18 +220,21 @@ func buildOrg(a *uaa.API, c *cfclient.Client, u *User) {
 	})
 	if err != nil {
 		log.Errorf("error creating %s-org. %s", usernameShortener(u), err)
+		return
 	}
 	fmt.Printf("created %s-org.\n", usernameShortener(u))
 
 	_, err = c.AssociateOrgManager(org.Guid, user.ID)
 	if err != nil {
 		log.Errorf("error associating %s with %s-org. %s", user.Emails[0].Value, usernameShortener(u), err)
+		return
 	}
 	fmt.Printf("associated %s with %s-org as OrgManager.\n", usernameShortener(u), usernameShortener(u))
 
 	_, err = c.AssociateOrgUser(org.Guid, user.ID)
 	if err != nil {
 		log.Errorf("error associating %s with %s-org as org user. %s", usernameShortener(u), usernameShortener(u), err)
+		return
 	}
 	fmt.Printf("associated %s with %s-org as OrgUser.\n", usernameShortener(u), usernameShortener(u))
 
@@ -237,6 +246,7 @@ func buildOrg(a *uaa.API, c *cfclient.Client, u *User) {
 	})
 	if err != nil {
 		log.Errorf("error creating %s-dev space. %s", usernameShortener(u), err)
+		return
 	}
 	fmt.Printf("associated %s with %s-dev as SpaceManager and SpaceDeveloper.\n", usernameShortener(u), usernameShortener(u))
 	return
@@ -247,18 +257,22 @@ func deleteUser(a *uaa.API, c *cfclient.Client, u *User) {
 	preDeleteOrgRef, err := c.GetOrgByName(fmt.Sprintf("%s-org", usernameShortener(u)))
 	if err != nil {
 		log.Error(err)
+		return
 	}
 	err = c.DeleteOrg(preDeleteOrgRef.Guid, true, false)
 	if err != nil {
 		log.Errorf("can't delete %s-org. %s", err)
+		return
 	}
 	testUser, err := a.GetUserByUsername(u.Email, "", "")
 	if err != nil {
 		log.Errorf("error getting %s to delete. %s\n", u.Email, err)
+		return
 	}
 	_, err = a.DeleteUser(testUser.ID)
 	if err != nil {
 		log.Errorf("error deleting %s user. %s", u.Email, err)
+		return
 	}
 	fmt.Printf("successfully deleted %s from cf and cf-uaa.\n", u.Email)
 }

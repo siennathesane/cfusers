@@ -40,6 +40,7 @@ func main() {
 		ApiAddress: capiTarget,
 		Username:   capiUser,
 		Password:   capiPassword,
+		SkipSslValidation: true,
 	}
 	cfClient, err := cfclient.NewClient(c)
 	if err != nil {
@@ -47,7 +48,7 @@ func main() {
 	}
 	fmt.Println("connected to cf.")
 
-	uaaClient, err := uaa.NewWithClientCredentials(uaaTarget, "", uaaUser, uaaPassword, uaa.OpaqueToken, false)
+	uaaClient, err := uaa.NewWithClientCredentials(uaaTarget, "", uaaUser, uaaPassword, uaa.OpaqueToken, true)
 	if err != nil {
 		log.Fatalf("error connecting to uaa. %s", err)
 	}
